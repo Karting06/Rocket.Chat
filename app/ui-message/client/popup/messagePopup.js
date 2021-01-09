@@ -103,11 +103,11 @@ Template.messagePopup.onCreated(function() {
 		}
 		const current = template.find('.popup-item.selected');
 		if (current == null) {
-			const first = template.find('.popup-item');
-			if (first != null) {
-				first.className += ' selected sidebar-item__popup-active';
-				return template.value.set(first.getAttribute('data-id'));
-			}
+			// const first = template.find('.popup-item');
+			// if (first != null) {
+			// 	first.className += ' selected sidebar-item__popup-active';
+			// 	return template.value.set(first.getAttribute('data-id'));
+			// }
 			return template.value.set(null);
 		}
 	};
@@ -119,6 +119,10 @@ Template.messagePopup.onCreated(function() {
 			if (template.blurOnSelectItem === true) {
 				template.input.blur();
 			} else {
+				template.open.set(false);
+			}
+			if (template.value.curValue == null) {
+				template.input.blur();
 				template.open.set(false);
 			}
 			template.enterValue();
@@ -148,6 +152,12 @@ Template.messagePopup.onCreated(function() {
 
 	template.onInputKeyup = (event) => {
 		if (template.closeOnEsc === true && template.open.curValue === true && event.which === keys.ESC) {
+			template.open.set(false);
+			event.preventDefault();
+			event.stopPropagation();
+			return;
+		}
+		if (template.open.curValue === true & event.which === keys.ENTER) {
 			template.open.set(false);
 			event.preventDefault();
 			event.stopPropagation();
@@ -197,18 +207,20 @@ Template.messagePopup.onCreated(function() {
 	};
 
 	template.enterValue = function() {
-		if (template.value.curValue == null) {
-			return;
-		}
+		// if (template.value.curValue == null) {
+		// 	return;
+		// }
 		const { value } = template.input;
 		const caret = getCursorPosition(template.input);
 		let firstPartValue = value.substr(0, caret);
 		const lastPartValue = value.substr(caret);
 		const getValue = this.getValue(template.value.curValue, template.data.collection, template.records.get(), firstPartValue);
 		if (!getValue) {
-			return;
+			// return;
+		} else {
+			firstPartValue = firstPartValue.replace(template.selectorRegex, template.prefix + getValue + template.suffix);
 		}
-		firstPartValue = firstPartValue.replace(template.selectorRegex, template.prefix + getValue + template.suffix);
+		// firstPartValue = firstPartValue.replace(template.selectorRegex, template.prefix + getValue + template.suffix);
 		template.input.value = firstPartValue + lastPartValue;
 		return setCursorPosition(template.input, firstPartValue.length);
 	};
