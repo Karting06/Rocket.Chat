@@ -78,7 +78,11 @@ Template.messagePopup.onCreated(function() {
 		return _id;
 	});
 	template.up = () => {
-		const current = template.find('.popup-item.selected');
+		let current = template.find('.popup-item.selected');
+		if (typeof current === 'undefined' || current == null) {
+			// multiple condition to avoid typeerror
+			current = template.getFirst();
+		}
 		const previous = $(current).prev('.popup-item')[0] || template.find('.popup-item:last-child');
 		if (previous != null) {
 			current.className = current.className.replace(/\sselected/, '').replace('sidebar-item__popup-active', '');
@@ -88,7 +92,10 @@ Template.messagePopup.onCreated(function() {
 		}
 	};
 	template.down = () => {
-		const current = template.find('.popup-item.selected');
+		let current = template.find('.popup-item.selected');
+		if (!current) {
+			current = template.getFirst();
+		}
 		const next = $(current).next('.popup-item')[0] || template.find('.popup-item');
 		if (next && next.classList.contains('popup-item')) {
 			current.className = current.className.replace(/\sselected/, '').replace('sidebar-item__popup-active', '');
@@ -109,6 +116,15 @@ Template.messagePopup.onCreated(function() {
 			// 	return template.value.set(first.getAttribute('data-id'));
 			// }
 			return template.value.set(null);
+		}
+	};
+	template.getFirst = () => {
+		const first = template.find('.popup-item');
+		if (first != null) {
+			first.className += ' selected sidebar-item__popup-active';
+			// return template.value.set(first.getAttribute('data-id'));
+			template.value.set(first.getAttribute('data-id'));
+			return first;
 		}
 	};
 	template.onInputKeydown = (event) => {
