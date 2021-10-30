@@ -1,5 +1,5 @@
 import { Meteor } from 'meteor/meteor';
-import s from 'underscore.string';
+import { escapeHTML } from '@rocket.chat/string-helpers';
 
 import { filterMarkdown } from '../../../markdown/lib/markdown';
 import { Users } from '../../../models/client';
@@ -9,13 +9,13 @@ import { emojiParser } from '../../../emoji/client/emojiParser.js';
 
 export const normalizeThreadTitle = ({ ...message }) => {
 	if (message.msg) {
-		const filteredMessage = filterMarkdown(s.escapeHTML(message.msg));
+		const filteredMessage = filterMarkdown(escapeHTML(message.msg));
 		if (!message.channels && !message.mentions) {
 			return filteredMessage;
 		}
 		const uid = Meteor.userId();
 		const me = uid && (Users.findOne(uid, { fields: { username: 1 } }) || {}).username;
-		const pattern = settings.get('UTF8_Names_Validation');
+		const pattern = settings.get('UTF8_User_Names_Validation');
 		const useRealName = settings.get('UI_Use_Real_Name');
 
 		const instance = new MentionsParser({
@@ -33,11 +33,11 @@ export const normalizeThreadTitle = ({ ...message }) => {
 		const attachment = message.attachments.find((attachment) => attachment.title || attachment.description);
 
 		if (attachment && attachment.description) {
-			return s.escapeHTML(attachment.description);
+			return escapeHTML(attachment.description);
 		}
 
 		if (attachment && attachment.title) {
-			return s.escapeHTML(attachment.title);
+			return escapeHTML(attachment.title);
 		}
 	}
 };

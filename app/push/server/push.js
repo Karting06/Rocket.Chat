@@ -6,7 +6,7 @@ import _ from 'underscore';
 
 import { initAPN, sendAPN } from './apn';
 import { sendGCM } from './gcm';
-import { logger, LoggerManager } from './logger';
+import { logger } from './logger';
 import { settings } from '../../settings/server';
 
 export const _matchToken = Match.OneOf({ apn: String }, { gcm: String });
@@ -128,6 +128,11 @@ export class PushClass {
 				return;
 			}
 
+			if (response?.statusCode === 422) {
+				logger.info('gateway rejected push notification. not retrying.', response);
+				return;
+			}
+
 			if (response?.statusCode === 401) {
 				logger.warn('Error sending push to gateway (not authorized)', response);
 				return;
@@ -203,7 +208,7 @@ export class PushClass {
 			return this.sendNotificationNative(app, notification, countApn, countGcm);
 		});
 
-		if (LoggerManager.logLevel === 2) {
+		if (settings.get('Log_Level') === '2') {
 			logger.debug(`Sent message "${ notification.title }" to ${ countApn.length } ios apps ${ countGcm.length } android apps`);
 
 			// Add some verbosity about the send result, making sure the developer

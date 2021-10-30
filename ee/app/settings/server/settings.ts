@@ -1,65 +1,59 @@
 import { Meteor } from 'meteor/meteor';
 
-import { SettingsEvents, settings, ISettingRecord } from '../../../../app/settings/server/functions/settings';
-import { SettingValue } from '../../../../app/settings/lib/settings';
+import { settings } from '../../../../app/settings/server/functions/settings';
 import { isEnterprise, hasLicense, onValidateLicenses } from '../../license/server/license';
 import SettingsModel from '../../../../app/models/server/models/Settings';
+import { ISetting, SettingValue } from '../../../../definition/ISetting';
+import { use } from '../../../../app/settings/server/Middleware';
+import { SettingsEvents } from '../../../../app/settings/server';
 
-function changeSettingValue(record: ISettingRecord): undefined | { value: SettingValue } {
+export function changeSettingValue(record: ISetting): SettingValue {
 	if (!record.enterprise) {
-		return;
+		return record.value;
 	}
 
 	if (!isEnterprise()) {
-		return { value: record.invalidValue };
+		return record.invalidValue;
 	}
 
 	if (!record.modules?.length) {
-		return;
+		return record.invalidValue;
 	}
 
 	for (const moduleName of record.modules) {
 		if (!hasLicense(moduleName)) {
-			return { value: record.invalidValue };
+			return record.invalidValue;
 		}
 	}
+
+	return record.value;
 }
 
-SettingsEvents.on('store-setting-value', (record: ISettingRecord, newRecord: { value: SettingValue }) => {
-	const changedValue = changeSettingValue(record);
-	if (changedValue) {
-		newRecord.value = changedValue.value;
+settings.set = use(settings.set, (context, next) => {
+	const [record] = context;
+
+	if (!record.enterprise) {
+		return next(...context);
 	}
+	const value = changeSettingValue(record);
+
+	return next({ ...record, value });
 });
 
-SettingsEvents.on('fetch-settings', (settings: Array<ISettingRecord>): void => {
+SettingsEvents.on('fetch-settings', (settings: Array<ISetting>): void => {
 	for (const setting of settings) {
 		const changedValue = changeSettingValue(setting);
-		if (changedValue) {
-			setting.value = changedValue.value;
+		if (changedValue === undefined) {
+			continue;
 		}
-	}
-});
-
-type ISettingNotificationValue = {
-	_id: string;
-	value: SettingValue;
-	editor: string;
-	properties: string;
-	enterprise: boolean;
-};
-
-SettingsEvents.on('change-setting', (record: ISettingRecord, value: ISettingNotificationValue): void => {
-	const changedValue = changeSettingValue(record);
-	if (changedValue) {
-		value.value = changedValue.value;
+		setting.value = changedValue;
 	}
 });
 
 function updateSettings(): void {
 	const enterpriseSettings = SettingsModel.findEnterpriseSettings();
 
-	enterpriseSettings.forEach((record: ISettingRecord) => settings.storeSettingValue(record, false));
+	enterpriseSettings.forEach((record: ISetting) => settings.set(record));
 }
 
 

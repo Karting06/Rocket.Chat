@@ -6,12 +6,13 @@ import { Tracker } from 'meteor/tracker';
 import { Session } from 'meteor/session';
 import { Template } from 'meteor/templating';
 import { TAPi18n } from 'meteor/rocketchat:tap-i18n';
+import { escapeRegExp } from '@rocket.chat/string-helpers';
 
 import { Messages, Subscriptions } from '../../../models/client';
 import { settings } from '../../../settings/client';
 import { hasAllPermission, hasAtLeastOnePermission } from '../../../authorization/client';
 import { EmojiPicker, emoji } from '../../../emoji';
-import { call } from '../../../ui-utils/client';
+import { callWithErrorHandling } from '../../../../client/lib/utils/callWithErrorHandling';
 import { t, getUserPreference, slashCommands } from '../../../utils/client';
 import { customMessagePopups } from './customMessagePopups';
 import './messagePopupConfig.html';
@@ -60,7 +61,7 @@ const reloadUsersFromRoomMessages = (rid, template) => {
 const fetchUsersFromServer = _.throttle(async (filterText, records, rid, cb) => {
 	const usernames = records.map(({ username }) => username);
 
-	const { users } = await call('spotlight', filterText, usernames, { users: true }, rid);
+	const { users } = await callWithErrorHandling('spotlight', filterText, usernames, { users: true, mentions: true }, rid);
 
 	if (!users || users.length <= 0) {
 		return;
@@ -94,7 +95,7 @@ const fetchRoomsFromServer = _.throttle(async (filterText, records, rid, cb) => 
 		return;
 	}
 
-	const { rooms } = await call('spotlight', filterText, null, { rooms: true }, rid);
+	const { rooms } = await callWithErrorHandling('spotlight', filterText, null, { rooms: true, mentions: true }, rid);
 
 	if (!rooms || rooms.length <= 0) {
 		return;
@@ -144,7 +145,7 @@ const getEmojis = (collection, filter) => {
 		return [];
 	}
 
-	const regExp = new RegExp(RegExp.escape(filter), 'i');
+	const regExp = new RegExp(escapeRegExp(filter), 'i');
 	const recents = EmojiPicker.getRecent().map((item) => `:${ item }:`);
 
 	return Object.keys(collection)
@@ -208,7 +209,7 @@ Template.messagePopupConfig.helpers({
 			getFilter: (collection, filter = '', cb) => {
 				const { rid } = this;
 				const filterText = filter.trim();
-				const filterRegex = filterText !== '' && new RegExp(`${ RegExp.escape(filterText) }`, 'i');
+				const filterRegex = filterText !== '' && new RegExp(`${ escapeRegExp(filterText) }`, 'i');
 
 				const items = template.usersFromRoomMessages
 					.find(

@@ -2,9 +2,10 @@
 
 import assert from 'assert';
 
+import { MongoMemoryServer } from 'mongodb-memory-server';
+
 import './Sessions.mocks.js';
 
-const mongoUnit = require('mongo-unit');
 const { MongoClient } = require('mongodb');
 
 const { aggregates } = require('./Sessions');
@@ -47,6 +48,7 @@ const DATA = {
 		loginAt: new Date('2019-04-30T00:11:34.047Z'),
 		type: 'session',
 		userId: 'xPZXw9xqM3kKshsse',
+		mostImportantRole: 'user',
 		lastActivityAt: new Date('2019-04-30T00:16:20.349Z'),
 		closedAt: new Date('2019-04-30T00:16:20.349Z'),
 	}, {
@@ -73,6 +75,7 @@ const DATA = {
 		loginAt: new Date('2019-05-03T00:11:34.047Z'),
 		type: 'session',
 		userId: 'xPZXw9xqM3kKshsse',
+		mostImportantRole: 'user',
 		lastActivityAt: new Date('2019-05-03T00:16:20.349Z'),
 		closedAt: new Date('2019-05-03T00:16:20.349Z'),
 	}, {
@@ -99,6 +102,7 @@ const DATA = {
 		loginAt: new Date('2019-05-03T00:16:21.846Z'),
 		type: 'session',
 		userId: 'xPZXw9xqM3kKshsse',
+		mostImportantRole: 'user',
 		lastActivityAt: new Date('2019-05-03T00:17:21.081Z'),
 		closedAt: new Date('2019-05-03T00:17:21.081Z'),
 	}, {
@@ -125,6 +129,7 @@ const DATA = {
 		loginAt: new Date('2019-05-03T00:17:22.375Z'),
 		type: 'session',
 		userId: 'xPZXw9xqM3kKshsse',
+		mostImportantRole: 'user',
 		lastActivityAt: new Date('2019-05-03T01:48:31.695Z'),
 		closedAt: new Date('2019-05-03T01:48:31.695Z'),
 	}, {
@@ -151,6 +156,7 @@ const DATA = {
 		loginAt: new Date('2019-05-03T01:48:43.521Z'),
 		type: 'session',
 		userId: 'xPZXw9xqM3kKshsse',
+		mostImportantRole: 'user',
 		closedAt: new Date('2019-05-03T01:48:43.761Z'),
 		lastActivityAt: new Date('2019-05-03T01:48:43.761Z'),
 	}, {
@@ -177,6 +183,7 @@ const DATA = {
 		loginAt: new Date('2019-05-03T01:48:45.064Z'),
 		type: 'session',
 		userId: 'xPZXw9xqM3kKshsse',
+		mostImportantRole: 'user',
 	}, {
 		_id: 'CJwfxASo62FHDgqog',
 		day: 2,
@@ -201,6 +208,7 @@ const DATA = {
 		loginAt: new Date('2019-05-03T01:50:31.092Z'),
 		type: 'session',
 		userId: 'xPZXw9xqM3kKshsse',
+		mostImportantRole: 'user',
 		closedAt: new Date('2019-05-03T01:50:31.355Z'),
 		lastActivityAt: new Date('2019-05-03T01:50:31.355Z'),
 	}, {
@@ -227,26 +235,33 @@ const DATA = {
 		loginAt: new Date('2019-05-03T01:50:32.765Z'),
 		type: 'session',
 		userId: 'xPZXw9xqM3kKshsse2',
+		mostImportantRole: 'admin',
 		lastActivityAt: new Date('2019-05-03T02:59:59.999Z'),
 	}],
 	sessions_dates,
-}; // require('./fixtures/testData.json')
+};
 
 describe('Sessions Aggregates', () => {
 	let db;
 
 	if (!process.env.MONGO_URL) {
-		before(function() {
+		let mongod;
+		before(async function() {
 			this.timeout(120000);
-			return mongoUnit.start({ version: '3.2.22' })
-				.then((testMongoUrl) => { process.env.MONGO_URL = testMongoUrl; });
+			const version = '5.0.0';
+			console.log(`Starting mongo version ${ version }`);
+			mongod = await MongoMemoryServer.create({ binary: { version } });
+			process.env.MONGO_URL = await mongod.getUri();
 		});
 
-		after(() => { mongoUnit.stop(); });
+		after(async () => {
+			await mongod.stop();
+		});
 	}
 
 	before(async () => {
-		const client = await MongoClient.connect(process.env.MONGO_URL);
+		console.log(`Connecting to mongo at ${ process.env.MONGO_URL }`);
+		const client = await MongoClient.connect(process.env.MONGO_URL, { useUnifiedTopology: true, useNewUrlParser: true });
 		db = client.db('test');
 
 		after(() => {
@@ -257,6 +272,7 @@ describe('Sessions Aggregates', () => {
 
 		const sessions = db.collection('sessions');
 		const sessions_dates = db.collection('sessions_dates');
+
 		return Promise.all([
 			sessions.insertMany(DATA.sessions),
 			sessions_dates.insertMany(DATA.sessions_dates),
@@ -266,14 +282,14 @@ describe('Sessions Aggregates', () => {
 	it('should have sessions_dates data saved', () => {
 		const collection = db.collection('sessions_dates');
 		return collection.find().toArray()
-			.then((docs) => assert.equal(docs.length, DATA.sessions_dates.length));
+			.then((docs) => assert.strictEqual(docs.length, DATA.sessions_dates.length));
 	});
 
 	it('should match sessions between 2018-12-11 and 2019-1-10', () => {
 		const collection = db.collection('sessions_dates');
-		const $match = aggregates.getMatchOfLastMonthToday({ year: 2019, month: 1, day: 10 });
+		const $match = aggregates.getMatchOfLastMonthOrWeek({ year: 2019, month: 1, day: 10 });
 
-		assert.deepEqual($match, {
+		assert.deepStrictEqual($match, {
 			$and: [{
 				$or: [
 					{ year: { $gt: 2018 } },
@@ -293,8 +309,8 @@ describe('Sessions Aggregates', () => {
 			$match,
 		}]).toArray()
 			.then((docs) => {
-				assert.equal(docs.length, 31);
-				assert.deepEqual(docs, [
+				assert.strictEqual(docs.length, 31);
+				assert.deepStrictEqual(docs, [
 					{ _id: '2018-12-11', year: 2018, month: 12, day: 11 },
 					{ _id: '2018-12-12', year: 2018, month: 12, day: 12 },
 					{ _id: '2018-12-13', year: 2018, month: 12, day: 13 },
@@ -332,9 +348,9 @@ describe('Sessions Aggregates', () => {
 
 	it('should match sessions between 2019-1-11 and 2019-2-10', () => {
 		const collection = db.collection('sessions_dates');
-		const $match = aggregates.getMatchOfLastMonthToday({ year: 2019, month: 2, day: 10 });
+		const $match = aggregates.getMatchOfLastMonthOrWeek({ year: 2019, month: 2, day: 10 });
 
-		assert.deepEqual($match, {
+		assert.deepStrictEqual($match, {
 			year: 2019,
 			$and: [{
 				$or: [
@@ -353,8 +369,8 @@ describe('Sessions Aggregates', () => {
 			$match,
 		}]).toArray()
 			.then((docs) => {
-				assert.equal(docs.length, 31);
-				assert.deepEqual(docs, [
+				assert.strictEqual(docs.length, 31);
+				assert.deepStrictEqual(docs, [
 					{ _id: '2019-1-11', year: 2019, month: 1, day: 11 },
 					{ _id: '2019-1-12', year: 2019, month: 1, day: 12 },
 					{ _id: '2019-1-13', year: 2019, month: 1, day: 13 },
@@ -392,9 +408,9 @@ describe('Sessions Aggregates', () => {
 
 	it('should match sessions between 2019-5-1 and 2019-5-31', () => {
 		const collection = db.collection('sessions_dates');
-		const $match = aggregates.getMatchOfLastMonthToday({ year: 2019, month: 5, day: 31 });
+		const $match = aggregates.getMatchOfLastMonthOrWeek({ year: 2019, month: 5, day: 31 });
 
-		assert.deepEqual($match, {
+		assert.deepStrictEqual($match, {
 			year: 2019,
 			month: 5,
 			day: { $gte: 1, $lte: 31 },
@@ -404,8 +420,8 @@ describe('Sessions Aggregates', () => {
 			$match,
 		}]).toArray()
 			.then((docs) => {
-				assert.equal(docs.length, 31);
-				assert.deepEqual(docs, [
+				assert.strictEqual(docs.length, 31);
+				assert.deepStrictEqual(docs, [
 					{ _id: '2019-5-1', year: 2019, month: 5, day: 1 },
 					{ _id: '2019-5-2', year: 2019, month: 5, day: 2 },
 					{ _id: '2019-5-3', year: 2019, month: 5, day: 3 },
@@ -443,9 +459,9 @@ describe('Sessions Aggregates', () => {
 
 	it('should match sessions between 2019-4-1 and 2019-4-30', () => {
 		const collection = db.collection('sessions_dates');
-		const $match = aggregates.getMatchOfLastMonthToday({ year: 2019, month: 4, day: 30 });
+		const $match = aggregates.getMatchOfLastMonthOrWeek({ year: 2019, month: 4, day: 30 });
 
-		assert.deepEqual($match, {
+		assert.deepStrictEqual($match, {
 			year: 2019,
 			month: 4,
 			day: { $gte: 1, $lte: 30 },
@@ -455,8 +471,8 @@ describe('Sessions Aggregates', () => {
 			$match,
 		}]).toArray()
 			.then((docs) => {
-				assert.equal(docs.length, 30);
-				assert.deepEqual(docs, [
+				assert.strictEqual(docs.length, 30);
+				assert.deepStrictEqual(docs, [
 					{ _id: '2019-4-1', year: 2019, month: 4, day: 1 },
 					{ _id: '2019-4-2', year: 2019, month: 4, day: 2 },
 					{ _id: '2019-4-3', year: 2019, month: 4, day: 3 },
@@ -493,9 +509,9 @@ describe('Sessions Aggregates', () => {
 
 	it('should match sessions between 2019-2-1 and 2019-2-28', () => {
 		const collection = db.collection('sessions_dates');
-		const $match = aggregates.getMatchOfLastMonthToday({ year: 2019, month: 2, day: 28 });
+		const $match = aggregates.getMatchOfLastMonthOrWeek({ year: 2019, month: 2, day: 28 });
 
-		assert.deepEqual($match, {
+		assert.deepStrictEqual($match, {
 			year: 2019,
 			month: 2,
 			day: { $gte: 1, $lte: 28 },
@@ -505,8 +521,8 @@ describe('Sessions Aggregates', () => {
 			$match,
 		}]).toArray()
 			.then((docs) => {
-				assert.equal(docs.length, 28);
-				assert.deepEqual(docs, [
+				assert.strictEqual(docs.length, 28);
+				assert.deepStrictEqual(docs, [
 					{ _id: '2019-2-1', year: 2019, month: 2, day: 1 },
 					{ _id: '2019-2-2', year: 2019, month: 2, day: 2 },
 					{ _id: '2019-2-3', year: 2019, month: 2, day: 3 },
@@ -541,9 +557,9 @@ describe('Sessions Aggregates', () => {
 
 	it('should match sessions between 2019-1-28 and 2019-2-27', () => {
 		const collection = db.collection('sessions_dates');
-		const $match = aggregates.getMatchOfLastMonthToday({ year: 2019, month: 2, day: 27 });
+		const $match = aggregates.getMatchOfLastMonthOrWeek({ year: 2019, month: 2, day: 27 });
 
-		assert.deepEqual($match, {
+		assert.deepStrictEqual($match, {
 			year: 2019,
 			$and: [{
 				$or: [
@@ -562,8 +578,8 @@ describe('Sessions Aggregates', () => {
 			$match,
 		}]).toArray()
 			.then((docs) => {
-				assert.equal(docs.length, 31);
-				assert.deepEqual(docs, [
+				assert.strictEqual(docs.length, 31);
+				assert.deepStrictEqual(docs, [
 					{ _id: '2019-1-28', year: 2019, month: 1, day: 28 },
 					{ _id: '2019-1-29', year: 2019, month: 1, day: 29 },
 					{ _id: '2019-1-30', year: 2019, month: 1, day: 30 },
@@ -602,36 +618,25 @@ describe('Sessions Aggregates', () => {
 	it('should have sessions data saved', () => {
 		const collection = db.collection('sessions');
 		return collection.find().toArray()
-			.then((docs) => assert.equal(docs.length, DATA.sessions.length));
+			.then((docs) => assert.strictEqual(docs.length, DATA.sessions.length));
 	});
 
 	it('should generate daily sessions', () => {
 		const collection = db.collection('sessions');
 		return aggregates.dailySessionsOfYesterday(collection, { year: 2019, month: 5, day: 2 }).toArray()
-			.then((docs) => {
+			.then(async (docs) => {
 				docs.forEach((doc) => {
 					doc._id = `${ doc.userId }-${ doc.year }-${ doc.month }-${ doc.day }`;
 				});
 
-				assert.equal(docs.length, 3);
-				assert.deepEqual(docs, [{
+				await collection.insertMany(docs);
+
+				assert.strictEqual(docs.length, 3);
+				assert.deepStrictEqual(docs, [{
 					_id: 'xPZXw9xqM3kKshsse-2019-5-2',
 					time: 5814,
 					sessions: 3,
 					devices: [{
-						sessions: 1,
-						time: 286,
-						device: {
-							type: 'browser',
-							name: 'Firefox',
-							longVersion: '66.0.3',
-							os: {
-								name: 'Linux',
-								version: '12',
-							},
-							version: '66.0.3',
-						},
-					}, {
 						sessions: 2,
 						time: 5528,
 						device: {
@@ -644,6 +649,19 @@ describe('Sessions Aggregates', () => {
 							},
 							version: '73.0.3683',
 						},
+					}, {
+						sessions: 1,
+						time: 286,
+						device: {
+							type: 'browser',
+							name: 'Firefox',
+							longVersion: '66.0.3',
+							os: {
+								name: 'Linux',
+								version: '12',
+							},
+							version: '66.0.3',
+						},
 					}],
 					type: 'user_daily',
 					_computedAt: docs[0]._computedAt,
@@ -651,6 +669,7 @@ describe('Sessions Aggregates', () => {
 					month: 5,
 					year: 2019,
 					userId: 'xPZXw9xqM3kKshsse',
+					mostImportantRole: 'user',
 				}, {
 					_id: 'xPZXw9xqM3kKshsse-2019-4-30',
 					day: 30,
@@ -674,6 +693,7 @@ describe('Sessions Aggregates', () => {
 					type: 'user_daily',
 					_computedAt: docs[1]._computedAt,
 					userId: 'xPZXw9xqM3kKshsse',
+					mostImportantRole: 'user',
 					year: 2019,
 				}, {
 					_id: 'xPZXw9xqM3kKshsse2-2019-5-1',
@@ -699,19 +719,29 @@ describe('Sessions Aggregates', () => {
 					month: 5,
 					year: 2019,
 					userId: 'xPZXw9xqM3kKshsse2',
+					mostImportantRole: 'admin',
 				}]);
-
-				return collection.insertMany(docs);
 			});
 	});
 
 	it('should have 2 unique users for month 5 of 2019', () => {
 		const collection = db.collection('sessions');
-		return aggregates.getUniqueUsersOfLastMonth(collection, { year: 2019, month: 5, day: 31 })
+		return aggregates.getUniqueUsersOfLastMonthOrWeek(collection, { year: 2019, month: 5, day: 31 })
 			.then((docs) => {
-				assert.equal(docs.length, 1);
-				assert.deepEqual(docs, [{
+				assert.strictEqual(docs.length, 1);
+				assert.deepStrictEqual(docs, [{
 					count: 2,
+					roles: [{
+						count: 1,
+						role: 'user',
+						sessions: 3,
+						time: 5814,
+					}, {
+						count: 1,
+						role: 'admin',
+						sessions: 1,
+						time: 4167,
+					}],
 					sessions: 4,
 					time: 9981,
 				}]);
@@ -722,9 +752,15 @@ describe('Sessions Aggregates', () => {
 		const collection = db.collection('sessions');
 		return aggregates.getUniqueUsersOfYesterday(collection, { year: 2019, month: 5, day: 1 })
 			.then((docs) => {
-				assert.equal(docs.length, 1);
-				assert.deepEqual(docs, [{
+				assert.strictEqual(docs.length, 1);
+				assert.deepStrictEqual(docs, [{
 					count: 1,
+					roles: [{
+						count: 1,
+						role: 'admin',
+						sessions: 1,
+						time: 4167,
+					}],
 					sessions: 1,
 					time: 4167,
 				}]);
@@ -735,9 +771,15 @@ describe('Sessions Aggregates', () => {
 		const collection = db.collection('sessions');
 		return aggregates.getUniqueUsersOfYesterday(collection, { year: 2019, month: 5, day: 2 })
 			.then((docs) => {
-				assert.equal(docs.length, 1);
-				assert.deepEqual(docs, [{
+				assert.strictEqual(docs.length, 1);
+				assert.deepStrictEqual(docs, [{
 					count: 1,
+					roles: [{
+						count: 1,
+						role: 'user',
+						sessions: 3,
+						time: 5814,
+					}],
 					sessions: 3,
 					time: 5814,
 				}]);
@@ -746,10 +788,10 @@ describe('Sessions Aggregates', () => {
 
 	it('should have 2 unique devices for month 5 of 2019', () => {
 		const collection = db.collection('sessions');
-		return aggregates.getUniqueDevicesOfLastMonth(collection, { year: 2019, month: 5, day: 31 })
+		return aggregates.getUniqueDevicesOfLastMonthOrWeek(collection, { year: 2019, month: 5, day: 31 })
 			.then((docs) => {
-				assert.equal(docs.length, 2);
-				assert.deepEqual(docs, [{
+				assert.strictEqual(docs.length, 2);
+				assert.deepStrictEqual(docs, [{
 					count: 3,
 					time: 9695,
 					type: 'browser',
@@ -769,8 +811,8 @@ describe('Sessions Aggregates', () => {
 		const collection = db.collection('sessions');
 		return aggregates.getUniqueDevicesOfYesterday(collection, { year: 2019, month: 5, day: 2 })
 			.then((docs) => {
-				assert.equal(docs.length, 2);
-				assert.deepEqual(docs, [{
+				assert.strictEqual(docs.length, 2);
+				assert.deepStrictEqual(docs, [{
 					count: 2,
 					time: 5528,
 					type: 'browser',
@@ -788,10 +830,10 @@ describe('Sessions Aggregates', () => {
 
 	it('should have 2 unique OS for month 5 of 2019', () => {
 		const collection = db.collection('sessions');
-		return aggregates.getUniqueOSOfLastMonth(collection, { year: 2019, month: 5, day: 31 })
+		return aggregates.getUniqueOSOfLastMonthOrWeek(collection, { year: 2019, month: 5, day: 31 })
 			.then((docs) => {
-				assert.equal(docs.length, 2);
-				assert.deepEqual(docs, [{
+				assert.strictEqual(docs.length, 2);
+				assert.deepStrictEqual(docs, [{
 					count: 3,
 					time: 9695,
 					name: 'Mac OS',
@@ -809,8 +851,8 @@ describe('Sessions Aggregates', () => {
 		const collection = db.collection('sessions');
 		return aggregates.getUniqueOSOfYesterday(collection, { year: 2019, month: 5, day: 2 })
 			.then((docs) => {
-				assert.equal(docs.length, 2);
-				assert.deepEqual(docs, [{
+				assert.strictEqual(docs.length, 2);
+				assert.deepStrictEqual(docs, [{
 					count: 2,
 					time: 5528,
 					name: 'Mac OS',
@@ -818,6 +860,205 @@ describe('Sessions Aggregates', () => {
 				}, {
 					count: 1,
 					time: 286,
+					name: 'Linux',
+					version: '12',
+				}]);
+			});
+	});
+
+	it('should match sessions between 2018-12-29 and 2019-1-4', () => {
+		const collection = db.collection('sessions_dates');
+		const $match = aggregates.getMatchOfLastMonthOrWeek({ year: 2019, month: 1, day: 4, type: 'week' });
+
+		assert.deepStrictEqual($match, {
+			$and: [{
+				$or: [
+					{ year: { $gt: 2018 } },
+					{ year: 2018, month: { $gt: 12 } },
+					{ year: 2018, month: 12, day: { $gte: 29 } },
+				],
+			}, {
+				$or: [
+					{ year: { $lt: 2019 } },
+					{ year: 2019, month: { $lt: 1 } },
+					{ year: 2019, month: 1, day: { $lte: 4 } },
+				],
+			}],
+		});
+
+		return collection.aggregate([{
+			$match,
+		}]).toArray()
+			.then((docs) => {
+				assert.strictEqual(docs.length, 7);
+				assert.deepStrictEqual(docs, [
+					{ _id: '2018-12-29', year: 2018, month: 12, day: 29 },
+					{ _id: '2018-12-30', year: 2018, month: 12, day: 30 },
+					{ _id: '2018-12-31', year: 2018, month: 12, day: 31 },
+					{ _id: '2019-1-1', year: 2019, month: 1, day: 1 },
+					{ _id: '2019-1-2', year: 2019, month: 1, day: 2 },
+					{ _id: '2019-1-3', year: 2019, month: 1, day: 3 },
+					{ _id: '2019-1-4', year: 2019, month: 1, day: 4 },
+				]);
+			});
+	});
+
+	it('should match sessions between 2019-1-29 and 2019-2-4', () => {
+		const collection = db.collection('sessions_dates');
+		const $match = aggregates.getMatchOfLastMonthOrWeek({ year: 2019, month: 2, day: 4, type: 'week' });
+
+		assert.deepStrictEqual($match, {
+			year: 2019,
+			$and: [{
+				$or: [
+					{ month: { $gt: 1 } },
+					{ month: 1, day: { $gte: 29 } },
+				],
+			}, {
+				$or: [
+					{ month: { $lt: 2 } },
+					{ month: 2, day: { $lte: 4 } },
+				],
+			}],
+		});
+
+		return collection.aggregate([{
+			$match,
+		}]).toArray()
+			.then((docs) => {
+				assert.strictEqual(docs.length, 7);
+				assert.deepStrictEqual(docs, [
+					{ _id: '2019-1-29', year: 2019, month: 1, day: 29 },
+					{ _id: '2019-1-30', year: 2019, month: 1, day: 30 },
+					{ _id: '2019-1-31', year: 2019, month: 1, day: 31 },
+					{ _id: '2019-2-1', year: 2019, month: 2, day: 1 },
+					{ _id: '2019-2-2', year: 2019, month: 2, day: 2 },
+					{ _id: '2019-2-3', year: 2019, month: 2, day: 3 },
+					{ _id: '2019-2-4', year: 2019, month: 2, day: 4 },
+				]);
+			});
+	});
+
+	it('should match sessions between 2019-5-1 and 2019-5-7', () => {
+		const collection = db.collection('sessions_dates');
+		const $match = aggregates.getMatchOfLastMonthOrWeek({ year: 2019, month: 5, day: 7, type: 'week' });
+
+		assert.deepStrictEqual($match, {
+			year: 2019,
+			month: 5,
+			day: { $gte: 1, $lte: 7 },
+		});
+
+		return collection.aggregate([{
+			$match,
+		}]).toArray()
+			.then((docs) => {
+				assert.strictEqual(docs.length, 7);
+				assert.deepStrictEqual(docs, [
+					{ _id: '2019-5-1', year: 2019, month: 5, day: 1 },
+					{ _id: '2019-5-2', year: 2019, month: 5, day: 2 },
+					{ _id: '2019-5-3', year: 2019, month: 5, day: 3 },
+					{ _id: '2019-5-4', year: 2019, month: 5, day: 4 },
+					{ _id: '2019-5-5', year: 2019, month: 5, day: 5 },
+					{ _id: '2019-5-6', year: 2019, month: 5, day: 6 },
+					{ _id: '2019-5-7', year: 2019, month: 5, day: 7 },
+				]);
+			});
+	});
+
+	it('should match sessions between 2019-5-7 and 2019-5-14', () => {
+		const collection = db.collection('sessions_dates');
+		const $match = aggregates.getMatchOfLastMonthOrWeek({ year: 2019, month: 5, day: 14, type: 'week' });
+
+		assert.deepStrictEqual($match, {
+			year: 2019,
+			month: 5,
+			day: { $gte: 8, $lte: 14 },
+		});
+
+		return collection.aggregate([{
+			$match,
+		}]).toArray()
+			.then((docs) => {
+				assert.strictEqual(docs.length, 7);
+				assert.deepStrictEqual(docs, [
+					{ _id: '2019-5-8', year: 2019, month: 5, day: 8 },
+					{ _id: '2019-5-9', year: 2019, month: 5, day: 9 },
+					{ _id: '2019-5-10', year: 2019, month: 5, day: 10 },
+					{ _id: '2019-5-11', year: 2019, month: 5, day: 11 },
+					{ _id: '2019-5-12', year: 2019, month: 5, day: 12 },
+					{ _id: '2019-5-13', year: 2019, month: 5, day: 13 },
+					{ _id: '2019-5-14', year: 2019, month: 5, day: 14 },
+				]);
+			});
+	});
+
+	it('should have 0 unique users for the week ending on 5/31 of 2019', () => {
+		const collection = db.collection('sessions');
+		return aggregates.getUniqueUsersOfLastMonthOrWeek(collection, { year: 2019, month: 5, day: 31, type: 'week' })
+			.then((docs) => {
+				assert.strictEqual(docs.length, 0);
+			});
+	});
+
+	it('should have 2 unique users for the week ending on 5/7 of 2019', () => {
+		const collection = db.collection('sessions');
+		return aggregates.getUniqueUsersOfLastMonthOrWeek(collection, { year: 2019, month: 5, day: 7, type: 'week' })
+			.then((docs) => {
+				assert.strictEqual(docs.length, 1);
+				assert.deepStrictEqual(docs, [{
+					count: 2,
+					roles: [{
+						count: 1,
+						role: 'user',
+						sessions: 3,
+						time: 5814,
+					}, {
+						count: 1,
+						role: 'admin',
+						sessions: 1,
+						time: 4167,
+					}],
+					sessions: 4,
+					time: 9981,
+				}]);
+			});
+	});
+
+	it('should have 2 unique devices for the week ending on 5/7 of 2019', () => {
+		const collection = db.collection('sessions');
+		return aggregates.getUniqueDevicesOfLastMonthOrWeek(collection, { year: 2019, month: 5, day: 7, type: 'week' })
+			.then((docs) => {
+				assert.strictEqual(docs.length, 2);
+				assert.deepStrictEqual(docs, [{
+					count: 3,
+					time: 9695,
+					type: 'browser',
+					name: 'Chrome',
+					version: '73.0.3683',
+				}, {
+					count: 1,
+					time: 286,
+					type: 'browser',
+					name: 'Firefox',
+					version: '66.0.3',
+				}]);
+			});
+	});
+
+	it('should have 2 unique OS for the week ending on 5/7 of 2019', () => {
+		const collection = db.collection('sessions');
+		return aggregates.getUniqueOSOfLastMonthOrWeek(collection, { year: 2019, month: 5, day: 7 })
+			.then((docs) => {
+				assert.strictEqual(docs.length, 2);
+				assert.deepStrictEqual(docs, [{
+					count: 3,
+					time: 9695,
+					name: 'Mac OS',
+					version: '10.14.1',
+				}, {
+					count: 2,
+					time: 572,
 					name: 'Linux',
 					version: '12',
 				}]);

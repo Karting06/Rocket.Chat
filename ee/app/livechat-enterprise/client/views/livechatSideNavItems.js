@@ -1,4 +1,4 @@
-import { registerOmnichannelSidebarItem } from '../../../../../client/omnichannel/sidebarItems';
+import { registerOmnichannelSidebarItem } from '../../../../../client/views/omnichannel/sidebarItems';
 import { hasPermission } from '../../../../../app/authorization/client';
 
 registerOmnichannelSidebarItem({
@@ -11,6 +11,12 @@ registerOmnichannelSidebarItem({
 	href: 'omnichannel/units',
 	i18nLabel: 'Units',
 	permissionGranted: () => hasPermission('manage-livechat-units'),
+});
+
+registerOmnichannelSidebarItem({
+	href: 'omnichannel-canned-responses',
+	i18nLabel: 'Canned_Responses',
+	permissionGranted: () => hasPermission('manage-livechat-canned-responses'),
 });
 
 registerOmnichannelSidebarItem({

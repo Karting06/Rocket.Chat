@@ -2,33 +2,32 @@ import { Meteor } from 'meteor/meteor';
 
 import { Livechat } from '../Livechat';
 import { settings } from '../../../../settings/server';
-import { Users } from '../../../../models/server';
 
-let monitorAgents = false;
+export let monitorAgents = false;
 let actionTimeout = 60000;
 let action = 'none';
 let comment = '';
 
-settings.get('Livechat_agent_leave_action_timeout', (_key, value) => {
+settings.watch('Livechat_agent_leave_action_timeout', (value) => {
 	if (typeof value !== 'number') {
 		return;
 	}
 	actionTimeout = value * 1000;
 });
 
-settings.get('Livechat_agent_leave_action', (_key, value) => {
+settings.watch('Livechat_agent_leave_action', (value) => {
 	monitorAgents = value !== 'none';
 	action = value as string;
 });
 
-settings.get('Livechat_agent_leave_comment', (_key, value) => {
+settings.watch('Livechat_agent_leave_comment', (value) => {
 	if (typeof value !== 'string') {
 		return;
 	}
 	comment = value;
 });
 
-const onlineAgents = {
+export const onlineAgents = {
 	users: new Set(),
 	queue: new Map(),
 
@@ -74,36 +73,3 @@ const onlineAgents = {
 		}
 	}),
 };
-
-Users.on('change', ({ clientAction, id, diff }) => {
-	if (!monitorAgents) {
-		return;
-	}
-
-	if (clientAction !== 'removed' && diff && !diff.status && !diff.statusLivechat) {
-		return;
-	}
-
-	switch (clientAction) {
-		case 'updated':
-		case 'inserted':
-			const agent = Users.findOneAgentById(id, {
-				fields: {
-					status: 1,
-					statusLivechat: 1,
-				},
-			});
-			const serviceOnline = agent && agent.status !== 'offline' && agent.statusLivechat === 'available';
-
-			if (serviceOnline) {
-				return onlineAgents.add(id);
-			}
-
-			onlineAgents.remove(id);
-
-			break;
-		case 'removed':
-			onlineAgents.remove(id);
-			break;
-	}
-});

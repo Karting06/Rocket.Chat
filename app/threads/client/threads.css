@@ -59,7 +59,6 @@
 
 .message {
 	& .thread-replied {
-
 		display: inline-flex;
 
 		display: flex;
@@ -135,7 +134,6 @@
 	}
 
 	.thread-quote__message {
-
 		display: flex;
 
 		overflow: hidden;
@@ -214,6 +212,9 @@
 }
 
 .contextual-bar__content.thread,
+.contextual-bar__content.discussions,
+.contextual-bar__content.channel-settings,
+.contextual-bar__content.keyboard-shortcut-list,
 .contextual-bar__content.threads {
 	padding: 0;
 }

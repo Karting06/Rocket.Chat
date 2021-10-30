@@ -1,4 +1,4 @@
-import s from 'underscore.string';
+import { escapeRegExp } from '@rocket.chat/string-helpers';
 
 import { hasPermissionAsync } from '../../../../../../app/authorization/server/functions/hasPermission';
 import { LivechatBusinessHours } from '../../../../../../app/models/server/raw';
@@ -15,7 +15,7 @@ export async function findBusinessHours(userId: string, { offset, count, sort }:
 	}
 	const query = {};
 	if (name) {
-		const filterReg = new RegExp(s.escapeRegExp(name), 'i');
+		const filterReg = new RegExp(escapeRegExp(name), 'i');
 		Object.assign(query, { name: filterReg });
 	}
 	const cursor = LivechatBusinessHours.find(query, {

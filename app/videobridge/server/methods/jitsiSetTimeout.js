@@ -6,10 +6,10 @@ import { callbacks } from '../../../callbacks/server';
 import { metrics } from '../../../metrics/server';
 import * as CONSTANTS from '../../constants';
 import { canSendMessage } from '../../../authorization/server';
-import { SystemLogger } from '../../../logger/server';
+import { SystemLogger } from '../../../../server/lib/logger/system';
 
 Meteor.methods({
-	'jitsi:updateTimeout': (rid) => {
+	'jitsi:updateTimeout': (rid, joiningNow = true) => {
 		if (!Meteor.userId()) {
 			throw new Meteor.Error('error-invalid-user', 'Invalid user', { method: 'jitsi:updateTimeout' });
 		}
@@ -36,12 +36,12 @@ Meteor.methods({
 				Rooms.setJitsiTimeout(rid, nextTimeOut);
 			}
 
-			if (!jitsiTimeout || currentTime > jitsiTimeout) {
+			if (joiningNow && (!jitsiTimeout || currentTime > jitsiTimeout)) {
 				metrics.messagesSent.inc(); // TODO This line needs to be moved to it's proper place. See the comments on: https://github.com/RocketChat/Rocket.Chat/pull/5736
 
 				const message = Messages.createWithTypeRoomIdMessageAndUser('jitsi_call_started', rid, '', Meteor.user(), {
 					actionLinks: [
-						{ icon: 'icon-videocam', label: TAPi18n.__('Click_to_join'), method_id: 'joinJitsiCall', params: '' },
+						{ icon: 'icon-videocam', label: TAPi18n.__('Click_to_join'), i18nLabel: 'Click_to_join', method_id: 'joinJitsiCall', params: '' },
 					],
 				});
 				message.msg = TAPi18n.__('Started_a_video_call');
@@ -50,9 +50,9 @@ Meteor.methods({
 
 			return jitsiTimeout || nextTimeOut;
 		} catch (error) {
-			SystemLogger.error('Error starting video call:', error);
+			SystemLogger.error('Error starting video call:', error.message);
 
-			throw new Meteor.Error('error-starting-video-call', error.message);
+			throw new Meteor.Error('error-starting-video-call', error.message, { method: 'jitsi:updateTimeout' });
 		}
 	},
 });

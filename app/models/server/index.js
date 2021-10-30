@@ -37,7 +37,10 @@ import LivechatAgentActivity from './models/LivechatAgentActivity';
 import LivechatInquiry from './models/LivechatInquiry';
 import ReadReceipts from './models/ReadReceipts';
 import LivechatExternalMessage from './models/LivechatExternalMessages';
+import OmnichannelQueue from './models/OmnichannelQueue';
 import Analytics from './models/Analytics';
+import EmailInbox from './models/EmailInbox';
+import ImportData from './models/ImportData';
 
 export { AppsLogsModel } from './models/apps-logs-model';
 export { AppsPersistenceModel } from './models/apps-persistence-model';
@@ -88,4 +91,7 @@ export {
 	LivechatExternalMessage,
 	LivechatInquiry,
 	Analytics,
+	OmnichannelQueue,
+	EmailInbox,
+	ImportData,
 };

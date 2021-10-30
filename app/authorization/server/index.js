@@ -1,6 +1,5 @@
 import { addUserRoles } from './functions/addUserRoles';
 import {
-	addRoomAccessValidator,
 	canAccessRoom,
 	roomAccessValidators,
 } from './functions/canAccessRoom';
@@ -22,7 +21,6 @@ import './methods/removeRoleFromPermission';
 import './methods/removeUserFromRole';
 import './methods/saveRole';
 import './streamer/permissions';
-import './startup';
 
 export {
 	getRoles,
@@ -32,7 +30,6 @@ export {
 	removeUserFromRoles,
 	canSendMessage,
 	validateRoomMessagePermissions,
-	addRoomAccessValidator,
 	roomAccessValidators,
 	addUserRoles,
 	canAccessRoom,

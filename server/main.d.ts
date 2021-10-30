@@ -1,9 +1,19 @@
 import { EJSON } from 'meteor/ejson';
+import { Db, Collection } from 'mongodb';
+import * as mongodb from 'mongodb';
+
+import { IStreamer, IStreamerConstructor } from './modules/streamer/streamer.module';
 
 /* eslint-disable @typescript-eslint/interface-name-prefix */
 declare module 'meteor/random' {
 	namespace Random {
 		function _randomString(numberOfChars: number, map: string): string;
+	}
+}
+
+declare module 'meteor/mongo' {
+	namespace MongoInternals {
+		function defaultRemoteCollectionDriver(): any;
 	}
 }
 
@@ -16,6 +26,14 @@ declare module 'meteor/accounts-base' {
 		function insertUserDoc(options: Record<string, any>, user: Record<string, any>): string;
 
 		function _generateStampedLoginToken(): {token: string; when: Date};
+
+		function _runLoginHandlers(methodInvocation: Function, loginRequest: Record<string, any>): Record<string, any> | undefined;
+
+		export class ConfigError extends Error {}
+
+		export class LoginCancelledError extends Error {
+			public static readonly numericError: number;
+		}
 	}
 }
 
@@ -31,7 +49,11 @@ declare module 'meteor/meteor' {
 			details?: string | undefined | Record<string, string>;
 		}
 
+		const Streamer: IStreamerConstructor & IStreamer;
+
 		const server: any;
+
+		const runAsUser: (userId: string, scope: Function) => any;
 
 		interface MethodThisType {
 			twoFactorChecked: boolean | undefined;
@@ -73,5 +95,56 @@ declare module 'meteor/littledata:synced-cron' {
 	namespace SyncedCron {
 		function add(params: ICronAddParameters): string;
 		function remove(name: string): string;
+	}
+}
+
+declare module 'meteor/mongo' {
+	interface RemoteCollectionDriver {
+		mongo: MongoConnection;
+	}
+	interface OplogHandle {
+		stop(): void;
+		onOplogEntry(trigger: Record<string, any>, callback: Function): void;
+		onSkippedEntries(callback: Function): void;
+		waitUntilCaughtUp(): void;
+		_defineTooFarBehind(value: number): void;
+	}
+	interface MongoConnection {
+		db: Db;
+		_oplogHandle: OplogHandle;
+		rawCollection(name: string): Collection;
+	}
+
+	namespace MongoInternals {
+		export const NpmModules: {
+			mongodb: {
+				version: string;
+				module: typeof mongodb;
+			};
+		};
+
+		function defaultRemoteCollectionDriver(): RemoteCollectionDriver;
+
+		class ConnectionClass {}
+
+		function Connection(): ConnectionClass;
+	}
+}
+
+declare module 'async_hooks' {
+	export class AsyncLocalStorage<T> {
+		disable(): void;
+
+		getStore(): T | undefined;
+
+		run(store: T, callback: (...args: any[]) => void, ...args: any[]): void;
+
+		exit(callback: (...args: any[]) => void, ...args: any[]): void;
+
+		runSyncAndReturn<R>(store: T, callback: (...args: any[]) => R, ...args: any[]): R;
+
+		exitSyncAndReturn<R>(callback: (...args: any[]) => R, ...args: any[]): R;
+
+		enterWith(store: T): void;
 	}
 }

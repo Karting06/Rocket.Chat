@@ -74,6 +74,9 @@ export const sendGCM = function({ userTokens, notification, _replaceToken, _remo
 
 	const message = new gcm.Message({
 		collapseKey: notification.from,
+		// Requires delivery of real-time messages to users while device is in Doze or app is in App Standby.
+		// https://developer.android.com/training/monitoring-device-state/doze-standby#exemption-cases
+		priority: 'high',
 		//    delayWhileIdle: true,
 		//    timeToLive: 4,
 		//    restricted_package_name: 'dk.gi2.app'
@@ -89,7 +92,7 @@ export const sendGCM = function({ userTokens, notification, _replaceToken, _remo
 
 	sender.send(message, userTokens, 5, function(err, result) {
 		if (err) {
-			logger.debug(`ANDROID ERROR: result of sender: ${ result }`);
+			logger.debug({ msg: 'ANDROID ERROR: result of sender', result });
 			return;
 		}
 
@@ -98,14 +101,14 @@ export const sendGCM = function({ userTokens, notification, _replaceToken, _remo
 			return;
 		}
 
-		logger.debug(`ANDROID: Result of sender: ${ JSON.stringify(result) }`);
+		logger.debug({ msg: 'ANDROID: Result of sender', result });
 
 		if (result.canonical_ids === 1 && userToken) {
 			// This is an old device, token is replaced
 			try {
 				_replaceToken({ gcm: userToken }, { gcm: result.results[0].registration_id });
 			} catch (err) {
-				logger.error('Error replacing token', err);
+				logger.error({ msg: 'Error replacing token', err });
 			}
 		}
 		// We cant send to that token - might not be registered
@@ -115,7 +118,7 @@ export const sendGCM = function({ userTokens, notification, _replaceToken, _remo
 			try {
 				_removeToken({ gcm: userToken });
 			} catch (err) {
-				logger.error('Error removing token', err);
+				logger.error({ msg: 'Error removing token', err });
 			}
 		}
 	});

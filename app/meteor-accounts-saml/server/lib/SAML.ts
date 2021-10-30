@@ -5,24 +5,25 @@ import { Random } from 'meteor/random';
 import { Accounts } from 'meteor/accounts-base';
 import { TAPi18n } from 'meteor/rocketchat:tap-i18n';
 import fiber from 'fibers';
-import s from 'underscore.string';
+import { escapeRegExp, escapeHTML } from '@rocket.chat/string-helpers';
 
 import { settings } from '../../../settings/server';
 import { Users, Rooms, CredentialTokens } from '../../../models/server';
 import { IUser } from '../../../../definition/IUser';
 import { IIncomingMessage } from '../../../../definition/IIncomingMessage';
-import { _setUsername, createRoom, generateUsernameSuggestion, addUserToRoom } from '../../../lib/server/functions';
+import { saveUserIdentity, createRoom, generateUsernameSuggestion, addUserToRoom } from '../../../lib/server/functions';
 import { SAMLServiceProvider } from './ServiceProvider';
 import { IServiceProviderOptions } from '../definition/IServiceProviderOptions';
 import { ISAMLAction } from '../definition/ISAMLAction';
 import { ISAMLUser } from '../definition/ISAMLUser';
 import { SAMLUtils } from './Utils';
+import { SystemLogger } from '../../../../server/lib/logger/system';
 
 const showErrorMessage = function(res: ServerResponse, err: string): void {
 	res.writeHead(200, {
 		'Content-Type': 'text/html',
 	});
-	const content = `<html><body><h2>Sorry, an annoying error occured</h2><div>${ s.escapeHTML(err) }</div></body></html>`;
+	const content = `<html><body><h2>Sorry, an annoying error occured</h2><div>${ escapeHTML(err) }</div></body></html>`;
 	res.end(content, 'utf-8');
 };
 
@@ -71,9 +72,7 @@ export class SAML {
 	}
 
 	public static insertOrUpdateSAMLUser(userObject: ISAMLUser): {userId: string; token: string} {
-		// @ts-ignore RegExp.escape is a meteor method
-		const escapeRegexp = (email: string): string => RegExp.escape(email);
-		const { roleAttributeSync, generateUsername, immutableProperty, nameOverwrite, mailOverwrite } = SAMLUtils.globalSettings;
+		const { generateUsername, immutableProperty, nameOverwrite, mailOverwrite, channelsAttributeUpdate, defaultUserRole = 'user' } = SAMLUtils.globalSettings;
 
 		let customIdentifierMatch = false;
 		let customIdentifierAttributeName: string | null = null;
@@ -94,7 +93,7 @@ export class SAML {
 
 		// Second, try searching by username or email (according to the immutableProperty setting)
 		if (!user) {
-			const expression = userObject.emailList.map((email) => `^${ escapeRegexp(email) }$`).join('|');
+			const expression = userObject.emailList.map((email) => `^${ escapeRegExp(email) }$`).join('|');
 			const emailRegex = new RegExp(expression, 'i');
 
 			user = SAML.findUser(userObject.username, emailRegex);
@@ -104,15 +103,19 @@ export class SAML {
 			address: email,
 			verified: settings.get('Accounts_Verify_Email_For_External_Accounts'),
 		}));
-		const globalRoles = userObject.roles;
 
 		let { username } = userObject;
 
+		const active = !settings.get('Accounts_ManuallyApproveNewUsers');
+
 		if (!user) {
+			// If we received any role from the mapping, use them - otherwise use the default role for creation.
+			const roles = userObject.roles?.length ? userObject.roles : SAMLUtils.ensureArray<string>(defaultUserRole.split(','));
+
 			const newUser: Record<string, any> = {
 				name: userObject.fullName,
-				active: true,
-				globalRoles,
+				active,
+				globalRoles: roles,
 				emails,
 				services: {
 					saml: {
@@ -145,7 +148,7 @@ export class SAML {
 			const userId = Accounts.insertUserDoc({}, newUser);
 			user = Users.findOne(userId);
 
-			if (userObject.channels) {
+			if (userObject.channels && channelsAttributeUpdate !== true) {
 				SAML.subscribeToSAMLChannels(userObject.channels, user);
 			}
 		}
@@ -169,10 +172,6 @@ export class SAML {
 			updateData[`services.saml.${ customIdentifierAttributeName }`] = userObject.attributeList.get(customIdentifierAttributeName);
 		}
 
-		for (const [customField, value] of userObject.customFields) {
-			updateData[`customFields.${ customField }`] = value;
-		}
-
 		// Overwrite mail if needed
 		if (mailOverwrite === true && (customIdentifierMatch === true || immutableProperty !== 'EMail')) {
 			updateData.emails = emails;
@@ -183,8 +182,13 @@ export class SAML {
 			updateData.name = userObject.fullName;
 		}
 
-		if (roleAttributeSync) {
-			updateData.roles = globalRoles;
+		// When updating an user, we only update the roles if we received them from the mapping
+		if (userObject.roles?.length) {
+			updateData.roles = userObject.roles;
+		}
+
+		if (userObject.channels && channelsAttributeUpdate === true) {
+			SAML.subscribeToSAMLChannels(userObject.channels, user);
 		}
 
 		Users.update({
@@ -194,7 +198,7 @@ export class SAML {
 		});
 
 		if (username && username !== user.username) {
-			_setUsername(user._id, username);
+			saveUserIdentity({ _id: user._id, username });
 		}
 
 		// sending token along with the userId
@@ -211,7 +215,7 @@ export class SAML {
 			res.writeHead(200);
 			res.write(serviceProvider.generateServiceProviderMetadata());
 			res.end();
-		} catch (err) {
+		} catch (err: any) {
 			showErrorMessage(res, err);
 		}
 	}
@@ -236,7 +240,7 @@ export class SAML {
 		const serviceProvider = new SAMLServiceProvider(service);
 		serviceProvider.validateLogoutRequest(req.query.SAMLRequest, (err, result) => {
 			if (err) {
-				console.error(err);
+				SystemLogger.error({ err });
 				throw new Meteor.Error('Unable to Validate Logout Request');
 			}
 
@@ -289,14 +293,14 @@ export class SAML {
 
 					serviceProvider.logoutResponseToUrl(response, (err, url) => {
 						if (err) {
-							console.error(err);
+							SystemLogger.error({ err });
 							return redirect();
 						}
 
 						redirect(url);
 					});
-				} catch (e) {
-					console.error(e);
+				} catch (e: any) {
+					SystemLogger.error(e);
 					redirect();
 				}
 			}).run();
@@ -373,7 +377,7 @@ export class SAML {
 		});
 	}
 
-	private static processValidateAction(req: IIncomingMessage, res: ServerResponse, service: IServiceProviderOptions, samlObject: ISAMLAction): void {
+	private static processValidateAction(req: IIncomingMessage, res: ServerResponse, service: IServiceProviderOptions, _samlObject: ISAMLAction): void {
 		const serviceProvider = new SAMLServiceProvider(service);
 		SAMLUtils.relayState = req.body.RelayState;
 		serviceProvider.validateResponse(req.body.SAMLResponse, (err, profile/* , loggedOut*/) => {
@@ -387,20 +391,14 @@ export class SAML {
 					throw new Error('No user data collected from IdP response.');
 				}
 
-				let credentialToken = (profile.inResponseToId && profile.inResponseToId.value) || profile.inResponseToId || profile.InResponseTo || samlObject.credentialToken;
+				// create a random token to store the login result
+				// to test an IdP initiated login on localhost, use the following URL (assuming SimpleSAMLPHP on localhost:8080):
+				// http://localhost:8080/simplesaml/saml2/idp/SSOService.php?spentityid=http://localhost:3000/_saml/metadata/test-sp
+				const credentialToken = Random.id();
+
 				const loginResult = {
 					profile,
 				};
-
-				if (!credentialToken) {
-					// If the login was initiated by the IDP, then we don't have a credentialToken as there was no AuthorizeRequest on our side
-					// so we create a random token now to use the same url to end the login
-					//
-					// to test an IdP initiated login on localhost, use the following URL (assuming SimpleSAMLPHP on localhost:8080):
-					// http://localhost:8080/simplesaml/saml2/idp/SSOService.php?spentityid=http://localhost:3000/_saml/metadata/test-sp
-					credentialToken = Random.id();
-					SAMLUtils.log('[SAML] Using random credentialToken: ', credentialToken);
-				}
 
 				this.storeCredential(credentialToken, loginResult);
 				const url = `${ Meteor.absoluteUrl('home') }?saml_idp_credentialToken=${ credentialToken }`;
@@ -445,6 +443,7 @@ export class SAML {
 	}
 
 	private static subscribeToSAMLChannels(channels: Array<string>, user: IUser): void {
+		const { includePrivateChannelsInUpdate } = SAMLUtils.globalSettings;
 		try {
 			for (let roomName of channels) {
 				roomName = roomName.trim();
@@ -453,18 +452,27 @@ export class SAML {
 				}
 
 				const room = Rooms.findOneByNameAndType(roomName, 'c', {});
-				if (!room) {
+				const privRoom = Rooms.findOneByNameAndType(roomName, 'p', {});
+
+				if (privRoom && includePrivateChannelsInUpdate === true) {
+					addUserToRoom(privRoom._id, user);
+					continue;
+				}
+
+				if (room) {
+					addUserToRoom(room._id, user);
+					continue;
+				}
+
+				if (!room && !privRoom) {
 					// If the user doesn't have an username yet, we can't create new rooms for them
 					if (user.username) {
 						createRoom('c', roomName, user.username);
 					}
-					continue;
 				}
-
-				addUserToRoom(room._id, user);
 			}
-		} catch (err) {
-			console.error(err);
+		} catch (err: any) {
+			SystemLogger.error(err);
 		}
 	}
 }

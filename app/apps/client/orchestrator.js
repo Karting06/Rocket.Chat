@@ -1,7 +1,8 @@
 import { AppClientManager } from '@rocket.chat/apps-engine/client/AppClientManager';
 import { Meteor } from 'meteor/meteor';
-import toastr from 'toastr';
+import { Tracker } from 'meteor/tracker';
 
+import { dispatchToastMessage } from '../../../client/lib/toast';
 import { hasAtLeastOnePermission } from '../../authorization';
 import { settings } from '../../settings/client';
 import { CachedCollectionManager } from '../../ui-cached-collection';
@@ -52,7 +53,10 @@ class AppClientOrchestrator {
 	handleError = (error) => {
 		console.error(error);
 		if (hasAtLeastOnePermission(['manage-apps'])) {
-			toastr.error(error.message);
+			dispatchToastMessage({
+				type: 'error',
+				message: error.message,
+			});
 		}
 	}
 
@@ -125,20 +129,22 @@ class AppClientOrchestrator {
 		return languages;
 	}
 
-	installApp = async (appId, version) => {
+	installApp = async (appId, version, permissionsGranted) => {
 		const { app } = await APIClient.post('apps/', {
 			appId,
 			marketplace: true,
 			version,
+			permissionsGranted,
 		});
 		return app;
 	}
 
-	updateApp = async (appId, version) => {
+	updateApp = async (appId, version, permissionsGranted) => {
 		const { app } = await APIClient.post(`apps/${ appId }`, {
 			appId,
 			marketplace: true,
 			version,
+			permissionsGranted,
 		});
 		return app;
 	}
@@ -187,7 +193,8 @@ Meteor.startup(() => {
 		});
 	});
 
-	settings.get('Apps_Framework_enabled', (isEnabled) => {
+	Tracker.autorun(() => {
+		const isEnabled = settings.get('Apps_Framework_enabled');
 		Apps.load(isEnabled);
 	});
 });

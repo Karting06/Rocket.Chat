@@ -5,12 +5,12 @@ import {
 	IBusinessHourBehavior,
 } from '../../../../../app/livechat/server/business-hour/AbstractBusinessHour';
 import { ILivechatBusinessHour } from '../../../../../definition/ILivechatBusinessHour';
-import { LivechatDepartment } from '../../../../../app/models/server';
-import { LivechatDepartment as Raw } from '../../../../../app/models/server/raw';
 import { LivechatDepartmentRaw } from '../../../../../app/models/server/raw/LivechatDepartment';
-import LivechatDepartmentAgents, { LivechatDepartmentAgentsRaw } from '../../../models/server/raw/LivechatDepartmentAgents';
+import { LivechatDepartmentAgentsRaw } from '../../../../../app/models/server/raw/LivechatDepartmentAgents';
+import { LivechatDepartment, LivechatDepartmentAgents } from '../../../../../app/models/server/raw';
 import { filterBusinessHoursThatMustBeOpened } from '../../../../../app/livechat/server/business-hour/Helper';
 import { closeBusinessHour, openBusinessHour, removeBusinessHourByAgentIds } from './Helper';
+import { ILivechatDepartment } from '../../../../../definition/ILivechatDepartment';
 
 interface IBusinessHoursExtraProperties extends ILivechatBusinessHour {
 	timezoneName: string;
@@ -18,7 +18,7 @@ interface IBusinessHoursExtraProperties extends ILivechatBusinessHour {
 }
 
 export class MultipleBusinessHoursBehavior extends AbstractBusinessHourBehavior implements IBusinessHourBehavior {
-	private DepartmentsRepository: LivechatDepartmentRaw = Raw;
+	private DepartmentsRepository: LivechatDepartmentRaw = LivechatDepartment;
 
 	private DepartmentsAgentsRepository: LivechatDepartmentAgentsRaw = LivechatDepartmentAgents;
 
@@ -78,6 +78,9 @@ export class MultipleBusinessHoursBehavior extends AbstractBusinessHourBehavior 
 		const toRemove = [...(currentDepartments || []).filter((dept: Record<string, any>) => !departments.includes(dept._id))];
 		await this.removeBusinessHourFromRemovedDepartmentsUsersIfNeeded(businessHourData._id, toRemove);
 		const businessHour = await this.BusinessHourRepository.findOneById(businessHourData._id);
+		if (!businessHour) {
+			return;
+		}
 		const businessHourIdToOpen = (await filterBusinessHoursThatMustBeOpened([businessHour])).map((businessHour) => businessHour._id);
 		if (!businessHourIdToOpen.length) {
 			return closeBusinessHour(businessHour);
@@ -87,11 +90,14 @@ export class MultipleBusinessHoursBehavior extends AbstractBusinessHourBehavior 
 
 	async onAddAgentToDepartment(options: Record<string, any> = {}): Promise<any> {
 		const { departmentId, agentsId } = options;
-		const department = await this.DepartmentsRepository.findOneById(departmentId, { fields: { businessHourId: 1 } });
+		const department = await this.DepartmentsRepository.findOneById<Pick<ILivechatDepartment, 'businessHourId'>>(departmentId, { projection: { businessHourId: 1 } });
 		if (!department || !agentsId.length) {
 			return options;
 		}
 		const defaultBusinessHour = await this.BusinessHourRepository.findOneDefaultBusinessHour();
+		if (!defaultBusinessHour) {
+			return options;
+		}
 		await removeBusinessHourByAgentIds(agentsId, defaultBusinessHour._id);
 		if (!department.businessHourId) {
 			return options;
@@ -110,7 +116,7 @@ export class MultipleBusinessHoursBehavior extends AbstractBusinessHourBehavior 
 
 	async onRemoveAgentFromDepartment(options: Record<string, any> = {}): Promise<any> {
 		const { departmentId, agentsId } = options;
-		const department = await this.DepartmentsRepository.findOneById(departmentId, { fields: { businessHourId: 1 } });
+		const department = await this.DepartmentsRepository.findOneById<Pick<ILivechatDepartment, 'businessHourId'>>(departmentId, { fields: { businessHourId: 1 } });
 		if (!department || !agentsId.length) {
 			return options;
 		}
@@ -144,6 +150,9 @@ export class MultipleBusinessHoursBehavior extends AbstractBusinessHourBehavior 
 			return options;
 		}
 		const defaultBusinessHour = await this.BusinessHourRepository.findOneDefaultBusinessHour();
+		if (!defaultBusinessHour) {
+			return options;
+		}
 		const businessHourToOpen = await filterBusinessHoursThatMustBeOpened([defaultBusinessHour]);
 		if (!businessHourToOpen.length) {
 			return options;

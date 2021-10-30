@@ -1,3 +1,5 @@
+import { escapeRegExp } from '@rocket.chat/string-helpers';
+
 import { BaseRaw } from './BaseRaw';
 
 export class MessagesRaw extends BaseRaw {
@@ -52,11 +54,7 @@ export class MessagesRaw extends BaseRaw {
 		const query = {
 			rid,
 			drid: { $exists: true },
-			...text && {
-				$text: {
-					$search: text,
-				},
-			},
+			msg: new RegExp(escapeRegExp(text), 'i'),
 		};
 
 		return this.find(query, options);
@@ -166,7 +164,7 @@ export class MessagesRaw extends BaseRaw {
 			{
 				$project: {
 					_id: 0,
-					date: { $toInt: '$_id.date' },
+					date: '$_id.date',
 					room: {
 						_id: '$_id._id',
 						name: '$_id.name',

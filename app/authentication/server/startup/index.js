@@ -3,7 +3,7 @@ import { Match } from 'meteor/check';
 import { Accounts } from 'meteor/accounts-base';
 import { TAPi18n } from 'meteor/rocketchat:tap-i18n';
 import _ from 'underscore';
-import s from 'underscore.string';
+import { escapeRegExp, escapeHTML } from '@rocket.chat/string-helpers';
 
 import * as Mailer from '../../../mailer/server/api';
 import { settings } from '../../../settings/server';
@@ -18,21 +18,22 @@ import {
 } from '../lib/restrictLoginAttempts';
 import './settings';
 import { getClientAddress } from '../../../../server/lib/getClientAddress';
+import { getNewUserRoles } from '../../../../server/services/user/lib/getNewUserRoles';
+
 
 Accounts.config({
 	forbidClientAccountCreation: true,
 });
 
-const updateMailConfig = _.debounce(() => {
-	Accounts._options.loginExpirationInDays = settings.get('Accounts_LoginExpiration');
-
-	Accounts.emailTemplates.siteName = settings.get('Site_Name');
-
-	Accounts.emailTemplates.from = `${ settings.get('Site_Name') } <${ settings.get('From_Email') }>`;
-}, 1000);
 
 Meteor.startup(() => {
-	settings.get(/^(Accounts_LoginExpiration|Site_Name|From_Email)$/, updateMailConfig);
+	settings.watchMultiple(['Accounts_LoginExpiration', 'Site_Name', 'From_Email'], () => {
+		Accounts._options.loginExpirationInDays = settings.get('Accounts_LoginExpiration');
+
+		Accounts.emailTemplates.siteName = settings.get('Site_Name');
+
+		Accounts.emailTemplates.from = `${ settings.get('Site_Name') } <${ settings.get('From_Email') }>`;
+	});
 });
 
 Accounts.emailTemplates.userToActivate = {
@@ -47,9 +48,9 @@ Accounts.emailTemplates.userToActivate = {
 		const email = options.reason ? 'Accounts_Admin_Email_Approval_Needed_With_Reason_Default' : 'Accounts_Admin_Email_Approval_Needed_Default';
 
 		return Mailer.replace(TAPi18n.__(email), {
-			name: s.escapeHTML(options.name),
-			email: s.escapeHTML(options.email),
-			reason: s.escapeHTML(options.reason),
+			name: escapeHTML(options.name),
+			email: escapeHTML(options.email),
+			reason: escapeHTML(options.reason),
 		});
 	},
 };
@@ -69,7 +70,7 @@ Accounts.emailTemplates.userActivated = {
 		const action = active ? activated : 'Deactivated';
 
 		return Mailer.replace(TAPi18n.__(`Accounts_Email_${ action }`), {
-			name: s.escapeHTML(name),
+			name: escapeHTML(name),
 		});
 	},
 };
@@ -121,8 +122,8 @@ Accounts.emailTemplates.enrollAccount.subject = function(user) {
 
 Accounts.emailTemplates.enrollAccount.html = function(user = {}/* , url*/) {
 	return Mailer.replace(enrollAccountTemplate, {
-		name: s.escapeHTML(user.name),
-		email: user.emails && user.emails[0] && s.escapeHTML(user.emails[0].address),
+		name: escapeHTML(user.name),
+		email: user.emails && user.emails[0] && escapeHTML(user.emails[0].address),
 	});
 };
 
@@ -204,14 +205,17 @@ Accounts.onCreateUser(function(options, user = {}) {
 		Mailer.send(email);
 	}
 
+	callbacks.run('onCreateUser', options, user);
 	return user;
 });
 
 Accounts.insertUserDoc = _.wrap(Accounts.insertUserDoc, function(insertUserDoc, options, user) {
-	let roles = [];
+	const noRoles = !user?.hasOwnProperty('globalRoles');
+
+	const globalRoles = [];
 
 	if (Match.test(user.globalRoles, [String]) && user.globalRoles.length > 0) {
-		roles = roles.concat(user.globalRoles);
+		globalRoles.push(...user.globalRoles);
 	}
 
 	delete user.globalRoles;
@@ -219,9 +223,11 @@ Accounts.insertUserDoc = _.wrap(Accounts.insertUserDoc, function(insertUserDoc, 
 	if (user.services && !user.services.password) {
 		const defaultAuthServiceRoles = String(settings.get('Accounts_Registration_AuthenticationServices_Default_Roles')).split(',');
 		if (defaultAuthServiceRoles.length > 0) {
-			roles = roles.concat(defaultAuthServiceRoles.map((s) => s.trim()));
+			globalRoles.push(...defaultAuthServiceRoles.map((s) => s.trim()));
 		}
 	}
+
+	const roles = getNewUserRoles(globalRoles);
 
 	if (!user.type) {
 		user.type = 'user';
@@ -269,7 +275,7 @@ Accounts.insertUserDoc = _.wrap(Accounts.insertUserDoc, function(insertUserDoc, 
 		}
 	}
 
-	if (roles.length === 0) {
+	if (noRoles || roles.length === 0) {
 		const hasAdmin = Users.findOne({
 			roles: 'admin',
 			type: 'user',
@@ -370,7 +376,7 @@ Accounts.validateNewUser(function(user) {
 	}
 
 	let domainWhiteList = settings.get('Accounts_AllowedDomainsList');
-	if (_.isEmpty(s.trim(domainWhiteList))) {
+	if (_.isEmpty(domainWhiteList?.trim())) {
 		return true;
 	}
 
@@ -378,7 +384,7 @@ Accounts.validateNewUser(function(user) {
 
 	if (user.emails && user.emails.length > 0) {
 		const email = user.emails[0].address;
-		const inWhiteList = domainWhiteList.some((domain) => email.match(`@${ RegExp.escape(domain) }$`));
+		const inWhiteList = domainWhiteList.some((domain) => email.match(`@${ escapeRegExp(domain) }$`));
 
 		if (inWhiteList === false) {
 			throw new Meteor.Error('error-invalid-domain');
