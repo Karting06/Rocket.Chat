@@ -8,7 +8,7 @@ import Growth from '../../../../../../client/components/data/Growth';
 import { Section } from '../Section';
 import { downloadCsvAs } from '../../../../../../client/lib/download';
 
-export function TableSection() {
+const TableSection = () => {
 	const t = useTranslation();
 
 	const periodOptions = useMemo(() => [
@@ -75,13 +75,16 @@ export function TableSection() {
 	}, [data]);
 
 	const downloadData = () => {
-		const data = channels.map(({
-			createdAt,
-			messagesCount,
-			name,
-			t,
-			updatedAt,
-		}) => [t, name, messagesCount, updatedAt, createdAt]);
+		const data = [
+			['Room type', 'Name', 'Messages', 'Last Update Date', 'Creation Date'],
+			...channels.map(({
+				createdAt,
+				messagesCount,
+				name,
+				t,
+				updatedAt,
+			}) => [t, name, messagesCount, updatedAt, createdAt]),
+		];
 		downloadCsvAs(data, `Channels_start_${ params.start }_end_${ params.end }`);
 	};
 
@@ -148,11 +151,13 @@ export function TableSection() {
 				itemsPerPage={itemsPerPage}
 				itemsPerPageLabel={() => t('Items_per_page:')}
 				showingResultsLabel={({ count, current, itemsPerPage }) =>
-					t('Showing results %s - %s of %s', current + 1, Math.min(current + itemsPerPage, count), count)}
+					t('Showing_results_of', current + 1, Math.min(current + itemsPerPage, count), count)}
 				count={(data && data.total) || 0}
 				onSetItemsPerPage={setItemsPerPage}
 				onSetCurrent={setCurrent}
 			/>
 		</Box>
 	</Section>;
-}
+};
+
+export default TableSection;

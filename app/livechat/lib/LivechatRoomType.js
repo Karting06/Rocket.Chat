@@ -17,7 +17,7 @@ class LivechatRoomRoute extends RoomTypeRouteConfig {
 	constructor() {
 		super({
 			name: 'live',
-			path: '/live/:id',
+			path: '/live/:id/:tab?/:context?',
 		});
 	}
 
@@ -100,7 +100,7 @@ export default class LivechatRoomType extends RoomTypeConfig {
 		}
 	}
 
-	readOnly(rid, user) {
+	readOnly(rid) {
 		const room = ChatRoom.findOne({ _id: rid }, { fields: { open: 1, servedBy: 1 } });
 		if (!room || !room.open) {
 			return true;
@@ -111,7 +111,7 @@ export default class LivechatRoomType extends RoomTypeConfig {
 			return true;
 		}
 
-		return (!room.servedBy || room.servedBy._id !== user._id) && !hasPermission('view-livechat-rooms');
+		return !room.servedBy;
 	}
 
 	getAvatarPath(roomData) {
@@ -122,19 +122,16 @@ export default class LivechatRoomType extends RoomTypeConfig {
 		if (!room || !room.v || room.v.username !== username) {
 			return false;
 		}
-		const button = instance.tabBar.getButtons().find((button) => button.id === 'visitor-info');
-		if (!button) {
-			return false;
-		}
 
-		const { template, i18nTitle: label, icon } = button;
-		instance.tabBar.setTemplate(template);
-		instance.tabBar.setData({
-			label,
-			icon,
-		});
+		instance.tabBar.openUserInfo();
+		return true;
+	}
 
-		instance.tabBar.open();
+	showQuickActionButtons() {
+		return true;
+	}
+
+	isLivechatRoom() {
 		return true;
 	}
 }
